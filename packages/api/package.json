@@ -1,0 +1,35 @@
+{
+  "name": "@OpenWord/api",
+  "type": "module",
+  "exports": {
+    ".": {
+      "default": "./src/index.ts"
+    },
+    "./*": {
+      "default": "./src/*.ts"
+    }
+  },
+  "scripts": {},
+  "dependencies": {
+    "@OpenWord/auth": "*",
+    "@OpenWord/db": "*",
+    "@OpenWord/env": "*",
+    "@effect/schema": "^0.75.5",
+    "@trpc/client": "^11.13.4",
+    "@trpc/server": "^11.13.4",
+    "better-auth": "^1.5.5",
+    "dotenv": "^17.2.2",
+    "effect": "^3.19.14",
+    "zod": "^4.1.13"
+  },
+  "devDependencies": {
+    "@OpenWord/config": "*",
+    "@effect/vitest": "^0.28.0",
+    "@types/express": "^5.0.6",
+    "@vitest/coverage-v8": "^3.1.1",
+    "@vitest/ui": "^3.1.1",
+    "jsdom": "^26.0.0",
+    "typescript": "^5",
+    "vitest": "^3.1.1"
+  }
+}

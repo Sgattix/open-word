@@ -1,0 +1,8 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "/^cd \"c:\\\\Users\\\\Sgattix\\\\Desktop\\\\PROGRAMMING-PROJECTS\\\\Various Sites\\\\OpenWord\\\\apps\\\\web\" ; npx next build$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
+}
