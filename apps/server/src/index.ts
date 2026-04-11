@@ -7,6 +7,8 @@ import { toNodeHandler } from "better-auth/node";
 import cors from "cors";
 import express from "express";
 
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+
 const app = express();
 
 app.use(
@@ -25,6 +27,9 @@ app.use(
   createExpressMiddleware({
     router: appRouter,
     createContext,
+    onError: ({ path, error }) => {
+      console.error(`Error in tRPC path: ${path}`, error);
+    },
   }),
 );
 
@@ -34,6 +39,22 @@ app.get("/", (_req, res) => {
   res.status(200).send("OK");
 });
 
-app.listen(3000, () => {
-  console.log("Server is running on http://localhost:3000");
+app.use(
+  (
+    err: any,
+    _req: express.Request,
+    res: express.Response,
+    _next: express.NextFunction,
+  ) => {
+    console.error("Server error:", err);
+    res.status(500).json({ error: err.message });
+  },
+);
+
+app.listen(PORT, () => {
+  console.log(`Server is running on http://localhost:${PORT}`);
+});
+
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("Unhandled Rejection at:", promise, "reason:", reason);
 });

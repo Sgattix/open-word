@@ -37,7 +37,7 @@ export const runConfettiAnimation = (duration = 3000) => {
   frame();
 };
 
-export const calculateCustomMultiplier = (
+export const calculateMultiplier = (
   wordLength: number,
   maxAttempts: number,
   hintsAllowed: number,
@@ -63,6 +63,7 @@ export const calculateScore = (
 ): GameScore => {
   const guessesUsed = game.guesses.length;
   const maxAttempts = settings.maxAttempts;
+  const isWin = game?.status === "won";
   const difficultyMultipliers: Record<Exclude<Difficulty, "custom">, number> = {
     easy: 1,
     normal: 1.5,
@@ -75,13 +76,19 @@ export const calculateScore = (
       ? settings.customMultiplier || 1
       : difficultyMultipliers[settings.difficulty];
 
-  const attemptBonus = Math.max(0, (maxAttempts - guessesUsed) * 50);
+  const attemptBonus = isWin
+    ? Math.max(0, (maxAttempts - guessesUsed) * 50)
+    : 0;
 
-  const timeBonus = Math.max(0, 300 - gameDuration * 3);
+  const timeBonus = isWin ? Math.max(0, 300 - gameDuration * 3) : 0;
 
-  const baseScore = 500 + attemptBonus + timeBonus;
+  const baseScore = isWin ? 500 + attemptBonus + timeBonus : 100;
 
-  const finalScore = Math.round(baseScore * multiplier);
+  const hintPenalty = isWin ? hintsUsed * 300 : hintsUsed * 50;
+  const finalScore = Math.max(
+    0,
+    Math.round(baseScore * (isWin ? multiplier : 0.25) - hintPenalty),
+  );
 
   return {
     difficulty: settings.difficulty,
@@ -94,3 +101,9 @@ export const calculateScore = (
     difficultyMultiplier: multiplier,
   };
 };
+
+export function formatTime(seconds: number): string {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins}:${secs.toString().padStart(2, "0")}`;
+}

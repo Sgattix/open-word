@@ -31,3 +31,15 @@ export const DIFFICULTY_PRESETS: Record<
 };
 
 export const DEFAULT_WORD_LENGTH = 5;
+
+export const LANGUAGES = [
+  { value: "en", label: "English" },
+  { value: "es", label: "Spanish" },
+  { value: "hi", label: "Hindi" },
+  { value: "gu", label: "Gujarati" },
+  { value: "de", label: "German" },
+  { value: "fr", label: "French" },
+  { value: "it", label: "Italian" },
+  { value: "zh", label: "Chinese" },
+  { value: "pt-br", label: "Portuguese (Brazil)" },
+];

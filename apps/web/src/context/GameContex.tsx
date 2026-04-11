@@ -1,10 +1,29 @@
 "use client";
 import { DEFAULT_WORD_LENGTH, DIFFICULTY_PRESETS } from "@/config";
-import { calculateCustomMultiplier } from "@/lib/utils";
+import { calculateMultiplier } from "@/lib/utils";
 import type { GameScore, GameSettings, GameState } from "@/types/game";
-import { trpc } from "@/utils/trpc";
+import { trpc, queryClient } from "@/utils/trpc";
+import { createContext, useContext, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { createContext, useContext, useState } from "react";
+
+type SaveGameInput = {
+  difficulty: string;
+  wordLength: number;
+  guessWord: string;
+  status: "won" | "lost";
+  guessesUsed: number;
+  attemptsLeft: number;
+  hintsUsed: number;
+  timeTaken: number;
+  score: number;
+  attemptBonus: number;
+  timeBonus: number;
+  difficultyMultiplier: number;
+  guesses: Array<{
+    guess: string;
+    feedback: Array<"correct" | "present" | "absent">;
+  }>;
+};
 
 export const GameContext = createContext<{
   gameId: string | null;
@@ -32,10 +51,15 @@ export const GameContext = createContext<{
   customMultiplier: number;
   setCustomMultiplier: React.Dispatch<React.SetStateAction<number>>;
   startGameMutation: ReturnType<typeof useMutation<any, any, any, any>>;
+  useHintMutation: ReturnType<typeof useMutation<any, any, any, any>>;
+  saveGameMutation: ReturnType<typeof useMutation<any, any, any, any>>;
   isBusy: boolean;
   canSubmitGuess: boolean;
   game: GameState | null;
-  handleSubmitGuess: (event: React.FormEvent<HTMLFormElement>) => void;
+  language: string;
+  handleSubmitGuess: (event: React.SubmitEvent<HTMLFormElement>) => void;
+  setLanguage: React.Dispatch<React.SetStateAction<string>>;
+  resetGameState: () => void;
 }>({
   gameId: null,
   setGameId: () => {},
@@ -59,11 +83,14 @@ export const GameContext = createContext<{
   setCustomMaxAttempts: () => {},
   customHintsAllowed: 2,
   setCustomHintsAllowed: () => {},
-  customMultiplier: calculateCustomMultiplier(5, 6, 2),
+  customMultiplier: calculateMultiplier(5, 6, 2),
   setCustomMultiplier: () => {},
   startGameMutation: {} as ReturnType<typeof useMutation>,
+  useHintMutation: {} as ReturnType<typeof useMutation>,
+  saveGameMutation: {} as ReturnType<typeof useMutation>,
   isBusy: false,
   canSubmitGuess: false,
+  language: "en",
   game: {
     gameId: "",
     wordLength: 5,
@@ -71,8 +98,11 @@ export const GameContext = createContext<{
     status: "playing",
     guesses: [],
     revealedWord: null,
+    hintedLetters: {},
   },
   handleSubmitGuess: () => {},
+  setLanguage: () => {},
+  resetGameState: () => {},
 });
 
 export const GameContextProvider: React.FC<{ children: React.ReactNode }> = ({
@@ -92,11 +122,19 @@ export const GameContextProvider: React.FC<{ children: React.ReactNode }> = ({
   const [customMaxAttempts, setCustomMaxAttempts] = useState(6);
   const [customHintsAllowed, setCustomHintsAllowed] = useState(2);
   const [customMultiplier, setCustomMultiplier] = useState(
-    calculateCustomMultiplier(5, 6, 2),
+    calculateMultiplier(5, 6, 2),
   );
+  const [language, setLanguage] = useState("en");
+
   const startGameMutation = useMutation({
-    ...trpc.solo.startGame.mutationOptions(),
-    onSuccess: (data) => {
+    mutationFn: (input: {
+      difficulty: string;
+      wordLength: number;
+      maxAttempts: number;
+      hintsAllowed: number;
+      language: string;
+    }) => trpc.solo.startGame.mutate(input),
+    onSuccess: (data: any) => {
       setGameId(data.gameId);
       setGuess("");
       setGameStartTime(Date.now());
@@ -105,84 +143,163 @@ export const GameContextProvider: React.FC<{ children: React.ReactNode }> = ({
     },
   });
 
-  const gameStateQuery = useQuery(
-    trpc.solo.getGameState.queryOptions(
-      {
-        gameId: gameId ?? "",
-      },
-      {
-        enabled: Boolean(gameId),
-      },
-    ),
-  );
+  const gameStateQuery = useQuery({
+    queryKey: ["solo", "getGameState", gameId],
+    queryFn: () => trpc.solo.getGameState.query({ gameId: gameId ?? "" }),
+    enabled: Boolean(gameId),
+  });
 
   const submitGuessMutation = useMutation({
-    ...trpc.solo.submitGuess.mutationOptions(),
+    mutationFn: (input: { gameId: string; guess: string }) =>
+      trpc.solo.submitGuess.mutate(input),
     onSuccess: () => {
       setGuess("");
-      void gameStateQuery.refetch();
+      void queryClient.invalidateQueries({
+        queryKey: ["solo", "getGameState", gameId],
+      });
     },
   });
+
+  const useHintMutation = useMutation({
+    mutationFn: (input: { gameId: string }) => trpc.solo.useHint.mutate(input),
+    onSuccess: (data: any) => {
+      setHintsUsed((prev) => prev + 1);
+      void queryClient.invalidateQueries({
+        queryKey: ["solo", "getGameState", gameId],
+      });
+    },
+  });
+
+  const saveGameMutation = useMutation({
+    mutationFn: (input: SaveGameInput) => trpc.solo.saveGame.mutate(input),
+  });
+
   const game = (gameStateQuery.data ?? null) as GameState | null;
 
   const isBusy =
     startGameMutation.isPending ||
     submitGuessMutation.isPending ||
+    useHintMutation.isPending ||
     gameStateQuery.isFetching;
+
+  const fullGuess = (() => {
+    if (!game?.hintedLetters || Object.keys(game.hintedLetters).length === 0) {
+      return guess;
+    }
+
+    const chars = Array(game?.wordLength ?? DEFAULT_WORD_LENGTH).fill("_");
+
+    for (const [position, letter] of Object.entries(game.hintedLetters)) {
+      chars[parseInt(position)] = letter;
+    }
+
+    let guessIdx = 0;
+    for (let i = 0; i < (game?.wordLength ?? DEFAULT_WORD_LENGTH); i++) {
+      if (!(i in game.hintedLetters) && guessIdx < guess.length) {
+        chars[i] = guess[guessIdx];
+        guessIdx++;
+      }
+    }
+
+    return chars.join("").replace(/_/g, "");
+  })();
+
   const canSubmitGuess =
     Boolean(gameId) &&
     game?.status === "playing" &&
-    guess.trim().length === (game?.wordLength ?? DEFAULT_WORD_LENGTH);
+    fullGuess.length === (game?.wordLength ?? DEFAULT_WORD_LENGTH);
 
-  function handleSubmitGuess(event: React.FormEvent<HTMLFormElement>) {
+  function handleSubmitGuess(event: React.SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!gameId) {
+    if (!gameId || !fullGuess) {
       return;
     }
 
     submitGuessMutation.mutate({
       gameId,
-      guess,
+      guess: fullGuess,
     });
   }
 
+  const resetGameState = () => {
+    setGameId(null);
+    setGuess("");
+    setShowSettings(true);
+    setSettings(DIFFICULTY_PRESETS.normal);
+    setGameStartTime(null);
+    setGameDuration(0);
+    setHintsUsed(0);
+    setFinalScore(null);
+    setCustomWordLength(5);
+    setCustomMaxAttempts(6);
+    setCustomHintsAllowed(2);
+    setCustomMultiplier(calculateMultiplier(5, 6, 2));
+    setLanguage("en");
+  };
+
+  const contextValue = useMemo(
+    () => ({
+      gameId,
+      setGameId,
+      guess,
+      setGuess,
+      showSettings,
+      setShowSettings,
+      settings,
+      setSettings,
+      gameStartTime,
+      setGameStartTime,
+      gameDuration,
+      setGameDuration,
+      hintsUsed,
+      setHintsUsed,
+      finalScore,
+      setFinalScore,
+      customWordLength,
+      setCustomWordLength,
+      customMaxAttempts,
+      setCustomMaxAttempts,
+      customHintsAllowed,
+      setCustomHintsAllowed,
+      customMultiplier,
+      setCustomMultiplier,
+      startGameMutation,
+      useHintMutation,
+      saveGameMutation,
+      isBusy,
+      canSubmitGuess,
+      game,
+      handleSubmitGuess,
+      language,
+      setLanguage,
+      resetGameState,
+    }),
+    [
+      gameId,
+      guess,
+      showSettings,
+      settings,
+      gameStartTime,
+      gameDuration,
+      hintsUsed,
+      finalScore,
+      customWordLength,
+      customMaxAttempts,
+      customHintsAllowed,
+      customMultiplier,
+      startGameMutation,
+      useHintMutation,
+      saveGameMutation,
+      isBusy,
+      canSubmitGuess,
+      game,
+      language,
+    ],
+  );
+
   return (
-    <GameContext.Provider
-      value={{
-        gameId,
-        setGameId,
-        guess,
-        setGuess,
-        showSettings,
-        setShowSettings,
-        settings,
-        setSettings,
-        gameStartTime,
-        setGameStartTime,
-        gameDuration,
-        setGameDuration,
-        hintsUsed,
-        setHintsUsed,
-        finalScore,
-        setFinalScore,
-        customWordLength,
-        setCustomWordLength,
-        customMaxAttempts,
-        setCustomMaxAttempts,
-        customHintsAllowed,
-        setCustomHintsAllowed,
-        customMultiplier,
-        setCustomMultiplier,
-        startGameMutation,
-        isBusy,
-        canSubmitGuess,
-        game,
-        handleSubmitGuess,
-      }}
-    >
-      {children}
-    </GameContext.Provider>
+    <GameContext.Provider value={contextValue}>{children}</GameContext.Provider>
   );
 };
 

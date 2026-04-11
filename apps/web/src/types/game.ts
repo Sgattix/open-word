@@ -5,6 +5,7 @@ export interface GameState {
   status: "playing" | "won" | "lost";
   guesses: Guess[];
   revealedWord: string | null;
+  hintedLetters: { [position: number]: string };
 }
 
 export interface GameSettings {

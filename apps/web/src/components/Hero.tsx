@@ -1,5 +1,6 @@
 import Link from "next/link";
-import WordWrapper from "./WordWrapper";
+import type { Route } from "next";
+import WordWrapper from "./shared/WordWrapper";
 
 function Hero() {
   return (
@@ -29,7 +30,7 @@ function Hero() {
         >
           Play Now
         </Link>
-        <Link href="/login" className="hover:underline">
+        <Link href={"/multiplayer" as Route} className="hover:underline">
           Multiplayer
         </Link>
       </div>

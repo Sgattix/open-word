@@ -1,10 +1,11 @@
 "use client";
 import Link from "next/link";
+import type { Route } from "next";
 import { useEffect, useState } from "react";
 import { useTheme } from "next-themes";
 
-import { ModeToggle } from "./mode-toggle";
-import UserMenu from "./auth/user-menu";
+import { ModeToggle } from "@/components/mode-toggle";
+import UserMenu from "@/components/auth/user-menu";
 import Image from "next/image";
 
 export default function Header() {
@@ -18,10 +19,11 @@ export default function Header() {
   const logoSrc =
     mounted && resolvedTheme === "dark" ? "/logo-sm-dark.png" : "/logo-sm.png";
 
-  const links = [
+  const links: Array<{ to: Route; label: string }> = [
     { to: "/", label: "Home" },
     { to: "/dashboard", label: "Dashboard" },
-  ] as const;
+    { to: "/multiplayer", label: "Multiplayer" },
+  ];
 
   return (
     <div>

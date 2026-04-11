@@ -4,10 +4,16 @@ model User {
   email         String    @unique
   emailVerified Boolean   @default(false)
   image         String?   @db.Text
+  role          String    @default("user") @db.Char(20)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   accounts      Account[]
   sessions      Session[]
+  games         Game[]
+  
+  // Multiplayer relations
+  hostedRooms   Room[]    @relation("RoomHost")
+  roomPlayers   RoomPlayer[]  @relation("RoomPlayers")
 
   @@map("user")
 }
@@ -57,4 +63,128 @@ model Verification {
 
   @@index([identifier(length: 191)])
   @@map("verification")
+}
+
+model Game {
+  id                    String   @id
+  userId                String
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Game metadata
+  difficulty            String   @db.Char(20)
+  wordLength            Int
+  guessWord             String   @db.Text
+  
+  // Game result
+  status                String   @db.Char(10)
+  guessesUsed           Int
+  attemptsLeft          Int
+  hintsUsed             Int
+  timeTaken             Int      // milliseconds
+  
+  // Scoring
+  score                 Int
+  attemptBonus          Int
+  timeBonus             Int
+  difficultyMultiplier  Float
+  
+  // Full game state for replay/analytics
+  guesses               String   @db.LongText // JSON array of guesses
+  
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  
+  @@index([userId])
+  @@index([createdAt])
+  @@map("game")
+}
+
+// Multiplayer game room
+model Room {
+  id            String   @id
+  code          String   @unique @db.Char(6) // For players to join
+  hostId        String
+  host          User     @relation("RoomHost", fields: [hostId], references: [id], onDelete: Cascade)
+  
+  // Game settings (inherited from host's selection)
+  difficulty    String   @db.Char(20)
+  wordLength    Int
+  language      String   @default("en") @db.Char(10)
+  numRounds     Int      @default(3) // Number of rounds (Kahoot style)
+  
+  // Round progress
+  currentRound  Int      @default(0) // 0 = not started, 1+ = current round
+  
+  // Room state
+  status        String   @default("waiting") @db.Char(20) // waiting, playing, between_rounds, finished
+  gameWord      String?  @db.Text // Revealed only when game starts
+  
+  // Timing
+  createdAt     DateTime @default(now())
+  startedAt     DateTime?
+  finishedAt    DateTime?
+  
+  // Relations
+  players       RoomPlayer[]
+  multiplayerGames MultiplayerGame[]
+  
+  @@index([code])
+  @@index([status])
+  @@index([createdAt])
+  @@map("room")
+}
+
+// Player in a room
+model RoomPlayer {
+  id            String   @id
+  roomId        String
+  room          Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User     @relation("RoomPlayers", fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Cumulative scoring across all rounds
+  rank          Int?
+  finalScore    Int      @default(0) // Total score across all rounds
+  
+  // Per-round scores (stored as JSON for flexibility)
+  roundScores   String   @db.LongText // JSON array of per-round scores
+  
+  // Game progress
+  status        String   @default("playing") @db.Char(20) // playing, won, lost, finished
+  guessesUsed   Int      @default(0) // Total guesses across all rounds
+  hintsUsed     Int      @default(0)
+  
+  // Timing
+  finishedAt    DateTime?
+  joinedAt      DateTime @default(now())
+  
+  // Full replay data (if desired)
+  guesses       String   @db.LongText // JSON array
+  
+  @@unique([roomId, userId])
+  @@index([roomId])
+  @@index([userId])
+  @@map("room_player")
+}
+
+// Recorded multiplayer game result
+model MultiplayerGame {
+  id            String   @id
+  roomId        String
+  room          Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  
+  // Game details
+  difficulty    String   @db.Char(20)
+  wordLength    Int
+  gameWord      String   @db.Text
+  language      String   @db.Char(10)
+  
+  // Results (snapshot after game ends)
+  results       String   @db.LongText // JSON array of {userId, rank, score, guessesUsed, timeTaken}
+  
+  createdAt     DateTime @default(now())
+  
+  @@index([roomId])
+  @@index([createdAt])
+  @@map("multiplayer_game")
 }

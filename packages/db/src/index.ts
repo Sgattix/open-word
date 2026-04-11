@@ -2,6 +2,13 @@ import { env } from "@OpenWord/env/server";
 import { PrismaMariaDb } from "@prisma/adapter-mariadb";
 
 import { PrismaClient } from "../prisma/generated/client";
+export type {
+  Game,
+  User,
+  Session,
+  Account,
+  Verification,
+} from "../prisma/generated/client";
 
 const databaseUrl: string = env.DATABASE_URL;
 const url: URL = new URL(databaseUrl);

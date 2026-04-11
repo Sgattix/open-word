@@ -4,26 +4,25 @@ import { OTPInput, OTPInputContext } from "input-otp"
 import { cn } from "@/lib/utils"
 import { IconMinus } from "@tabler/icons-react"
 
-function InputOTP({
-  className,
-  containerClassName,
-  ...props
-}: React.ComponentProps<typeof OTPInput> & {
-  containerClassName?: string
-}) {
-  return (
-    <OTPInput
-      data-slot="input-otp"
-      containerClassName={cn(
-        "cn-input-otp flex items-center has-disabled:opacity-50",
-        containerClassName
-      )}
-      spellCheck={false}
-      className={cn("disabled:cursor-not-allowed", className)}
-      {...props}
-    />
-  )
-}
+const InputOTP = React.forwardRef<
+  React.ElementRef<typeof OTPInput>,
+  React.ComponentProps<typeof OTPInput> & {
+    containerClassName?: string;
+  }
+>(({ className, containerClassName, ...props }, ref) => (
+  <OTPInput
+    ref={ref}
+    data-slot="input-otp"
+    containerClassName={cn(
+      "cn-input-otp flex items-center has-disabled:opacity-50",
+      containerClassName,
+    )}
+    spellCheck={false}
+    className={cn("disabled:cursor-not-allowed", className)}
+    {...props}
+  />
+));
+InputOTP.displayName = "InputOTP";
 
 function InputOTPGroup({ className, ...props }: React.ComponentProps<"div">) {
   return (

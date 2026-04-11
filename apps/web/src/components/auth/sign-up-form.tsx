@@ -5,7 +5,7 @@ import z from "zod";
 
 import { authClient } from "@/lib/auth-client";
 
-import Loader from "@/components/loader";
+import Loader from "@/components/shared/loader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";

@@ -139,10 +139,6 @@
   animation: status-pop 300ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.play-celebrate {
-  filter: saturate(1.05);
-}
-
 @keyframes flip-vertical {
   0% {
     transform: perspective(400px) rotateX(0);
