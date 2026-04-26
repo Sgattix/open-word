@@ -20,6 +20,11 @@ export function useMultiplayerGameState() {
   const [totalRounds, setTotalRounds] = useState(3);
   const [isHost, setIsHost] = useState(false);
   const [roomStatus, setRoomStatus] = useState<string>("playing");
+  const [gameStartedAtMs, setGameStartedAtMs] = useState<number | null>(null);
+  const [globalElapsedSeconds, setGlobalElapsedSeconds] = useState(0);
+  const [timePerRoundSeconds, setTimePerRoundSeconds] = useState(60);
+  const [roundEndsAtMs, setRoundEndsAtMs] = useState<number | null>(null);
+  const [roundRemainingSeconds, setRoundRemainingSeconds] = useState(60);
 
   return {
     guess,
@@ -40,6 +45,16 @@ export function useMultiplayerGameState() {
     setIsHost,
     roomStatus,
     setRoomStatus,
+    gameStartedAtMs,
+    setGameStartedAtMs,
+    globalElapsedSeconds,
+    setGlobalElapsedSeconds,
+    timePerRoundSeconds,
+    setTimePerRoundSeconds,
+    roundEndsAtMs,
+    setRoundEndsAtMs,
+    roundRemainingSeconds,
+    setRoundRemainingSeconds,
   };
 }
 
@@ -77,8 +92,96 @@ export function useRoomStateSync(
       gameState.setTotalRounds(roomData.numRounds);
       gameState.setIsHost(roomData.hostId === session?.user?.id);
       gameState.setRoomStatus(roomData.status);
+      gameState.setTimePerRoundSeconds(roomData.timePerRound ?? 60);
+
+      const startedAtMs = roomData.startedAt
+        ? new Date(roomData.startedAt).getTime()
+        : null;
+      gameState.setGameStartedAtMs(startedAtMs);
+
+      const roundEndsAtMs = roomData.roundEndsAt
+        ? new Date(roomData.roundEndsAt).getTime()
+        : null;
+      gameState.setRoundEndsAtMs(roundEndsAtMs);
+
+      if (startedAtMs) {
+        gameState.setGlobalElapsedSeconds(
+          Math.max(0, Math.floor((Date.now() - startedAtMs) / 1000)),
+        );
+      }
+
+      if (roundEndsAtMs) {
+        gameState.setRoundRemainingSeconds(
+          Math.max(0, Math.ceil((roundEndsAtMs - Date.now()) / 1000)),
+        );
+      } else {
+        gameState.setRoundRemainingSeconds(roomData.timePerRound ?? 60);
+      }
     }
   }, [roomData, session?.user?.id, gameState]);
+}
+
+/**
+ * Maintains a synchronized global timer for the whole multiplayer match.
+ */
+export function useGlobalGameTimer(
+  gameStartedAtMs: number | null,
+  roomStatus: string,
+  setGlobalElapsedSeconds: (seconds: number) => void,
+) {
+  useEffect(() => {
+    if (!gameStartedAtMs || roomStatus === "waiting") {
+      setGlobalElapsedSeconds(0);
+      return;
+    }
+
+    const updateElapsed = () => {
+      setGlobalElapsedSeconds(
+        Math.max(0, Math.floor((Date.now() - gameStartedAtMs) / 1000)),
+      );
+    };
+
+    updateElapsed();
+
+    if (roomStatus === "finished") {
+      return;
+    }
+
+    const interval = setInterval(updateElapsed, 1000);
+    return () => clearInterval(interval);
+  }, [gameStartedAtMs, roomStatus, setGlobalElapsedSeconds]);
+}
+
+/**
+ * Maintains a synchronized per-round countdown timer for all players.
+ */
+export function useRoundCountdownTimer(
+  roundEndsAtMs: number | null,
+  roomStatus: string,
+  timePerRoundSeconds: number,
+  setRoundRemainingSeconds: (seconds: number) => void,
+) {
+  useEffect(() => {
+    if (!roundEndsAtMs || roomStatus !== "playing") {
+      setRoundRemainingSeconds(timePerRoundSeconds);
+      return;
+    }
+
+    const updateRemaining = () => {
+      setRoundRemainingSeconds(
+        Math.max(0, Math.ceil((roundEndsAtMs - Date.now()) / 1000)),
+      );
+    };
+
+    updateRemaining();
+    const interval = setInterval(updateRemaining, 500);
+    return () => clearInterval(interval);
+  }, [
+    roundEndsAtMs,
+    roomStatus,
+    timePerRoundSeconds,
+    setRoundRemainingSeconds,
+  ]);
 }
 
 /**

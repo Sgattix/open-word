@@ -37,9 +37,20 @@ export function MultiplayerGameScreen() {
     startNextRoundMutation,
     endRoundMutation,
     finishGameMutation,
+    roundRemainingSeconds,
+    timePerRoundSeconds,
   } = useMultiplayerGameLogic();
 
-  const canType = roomStatus === "playing" && !userFinished;
+  const formattedRoundTime = useMemo(() => {
+    const minutes = Math.floor(roundRemainingSeconds / 60)
+      .toString()
+      .padStart(2, "0");
+    const seconds = (roundRemainingSeconds % 60).toString().padStart(2, "0");
+    return `${minutes}:${seconds}`;
+  }, [roundRemainingSeconds]);
+
+  const canType =
+    roomStatus === "playing" && !userFinished && roundRemainingSeconds > 0;
   const isTransitioning =
     submitGuessMutation.isPending ||
     endRoundMutation.isPending ||
@@ -47,14 +58,30 @@ export function MultiplayerGameScreen() {
     finishGameMutation.isPending;
 
   const canContinue = useMemo(() => {
-    if (!isHost || !allPlayersFinished) return false;
+    const canHostAdvanceRound =
+      allPlayersFinished || roundRemainingSeconds === 0;
+    if (!isHost || !canHostAdvanceRound) return false;
     return currentRound < totalRounds;
-  }, [allPlayersFinished, currentRound, isHost, totalRounds]);
+  }, [
+    allPlayersFinished,
+    currentRound,
+    isHost,
+    roundRemainingSeconds,
+    totalRounds,
+  ]);
 
   const canFinish = useMemo(() => {
-    if (!isHost || !allPlayersFinished) return false;
+    const canHostAdvanceRound =
+      allPlayersFinished || roundRemainingSeconds === 0;
+    if (!isHost || !canHostAdvanceRound) return false;
     return currentRound >= totalRounds;
-  }, [allPlayersFinished, currentRound, isHost, totalRounds]);
+  }, [
+    allPlayersFinished,
+    currentRound,
+    isHost,
+    roundRemainingSeconds,
+    totalRounds,
+  ]);
 
   return (
     <>
@@ -63,6 +90,18 @@ export function MultiplayerGameScreen() {
           <CardTitle className="text-3xl font-black tracking-[0.18em] uppercase text-zinc-900 dark:text-white">
             Multiplayer Round {currentRound}/{totalRounds}
           </CardTitle>
+          <div
+            className={`mx-auto inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs uppercase tracking-wider ${
+              roundRemainingSeconds <= 10
+                ? "border-red-400/60 text-red-500"
+                : "border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300"
+            }`}
+          >
+            <span>Round Timer ({timePerRoundSeconds}s)</span>
+            <span className="font-black text-sm tabular-nums">
+              {formattedRoundTime}
+            </span>
+          </div>
           <CardDescription className="text-base text-zinc-600 dark:text-zinc-400">
             {userFinished
               ? `Great run. Round score: ${userScore}`
@@ -97,6 +136,14 @@ export function MultiplayerGameScreen() {
               {submitGuessMutation.isPending ? "Submitting..." : "Submit Guess"}
             </Button>
           </form>
+
+          {roomStatus === "playing" && roundRemainingSeconds === 0 && (
+            <div className="rounded-lg bg-red-50 dark:bg-red-900/20 p-4 text-center text-sm text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800">
+              {isHost
+                ? "Time is up for this round. Continue when ready."
+                : "Time is up for this round. Waiting for host to continue..."}
+            </div>
+          )}
 
           <div className="rounded-lg border border-zinc-200 dark:border-zinc-700 p-4">
             <div className="text-xs uppercase tracking-wide text-zinc-500 dark:text-zinc-400">

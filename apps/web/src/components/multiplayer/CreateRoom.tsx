@@ -21,6 +21,8 @@ function CreateRoom({
   isCreating,
   numRounds = 3,
   setNumRounds,
+  timePerRound = 60,
+  setTimePerRound,
 }: {
   difficulty: Difficulty;
   setDifficulty: (d: Difficulty) => void;
@@ -30,6 +32,8 @@ function CreateRoom({
   isCreating: boolean;
   numRounds?: number;
   setNumRounds?: (r: number) => void;
+  timePerRound?: number;
+  setTimePerRound?: (seconds: number) => void;
 }) {
   return (
     <div className="space-y-4">
@@ -87,6 +91,27 @@ function CreateRoom({
               {[1, 3, 5, 7, 10].map((n) => (
                 <SelectItem key={n} value={n.toString()}>
                   {n} Round{n !== 1 ? "s" : ""}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div>
+        <Label htmlFor="timePerRound">Time Per Round</Label>
+        <Select
+          value={timePerRound?.toString() || "60"}
+          onValueChange={(v) => setTimePerRound?.(parseInt(v, 10))}
+        >
+          <SelectTrigger id="timePerRound" className="w-full mt-2">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              {[30, 45, 60, 90, 120, 180].map((seconds) => (
+                <SelectItem key={seconds} value={seconds.toString()}>
+                  {seconds}s
                 </SelectItem>
               ))}
             </SelectGroup>

@@ -28,8 +28,12 @@ const MULTIPLAYER_GAMES = new Map<
       }
     >;
     startedAt: number;
+    roundEndsAt: number;
+    timePerRound: number;
   }
 >();
+
+const ROOM_TIME_PER_ROUND = new Map<string, number>();
 
 function generateRoomCode(): string {
   return Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -43,6 +47,7 @@ export const multiplayerRouter = router({
         wordLength: z.number(),
         language: z.string().default("en"),
         numRounds: z.number().int().min(1).max(10).default(3),
+        timePerRound: z.number().int().min(15).max(300).default(60),
       }),
     )
     .mutation(async ({ input, ctx }) => {
@@ -74,9 +79,12 @@ export const multiplayerRouter = router({
         },
       });
 
+      ROOM_TIME_PER_ROUND.set(room.id, input.timePerRound);
+
       return {
         roomId: room.id,
         code: room.code,
+        timePerRound: input.timePerRound,
       };
     }),
 
@@ -152,6 +160,11 @@ export const multiplayerRouter = router({
         });
       }
 
+      const timePerRound = ROOM_TIME_PER_ROUND.get(room.id) ?? 60;
+      const activeRoundState = MULTIPLAYER_GAMES.get(
+        getGameKey(room.id, room.currentRound),
+      );
+
       return {
         id: room.id,
         hostId: room.hostId,
@@ -162,6 +175,10 @@ export const multiplayerRouter = router({
         language: room.language,
         numRounds: room.numRounds,
         currentRound: room.currentRound,
+        timePerRound,
+        roundEndsAt: activeRoundState?.roundEndsAt
+          ? new Date(activeRoundState.roundEndsAt).toISOString()
+          : null,
         gameWord: room.gameWord,
         startedAt: room.startedAt,
         players: room.players.map((p) => ({
@@ -206,6 +223,7 @@ export const multiplayerRouter = router({
       }
 
       const nextRound = isInitialStart ? 1 : room.currentRound + 1;
+      const timePerRound = ROOM_TIME_PER_ROUND.get(room.id) ?? 60;
 
       const endpoint = new URL("https://random-words-api.kushcreates.com/api");
       endpoint.searchParams.set("length", room.wordLength.toString());
@@ -281,11 +299,13 @@ export const multiplayerRouter = router({
       }
 
       // Store with round-specific key
-      MULTIPLAYER_GAMES.set(getGameKey(input.roomId,nextRound), {
+      MULTIPLAYER_GAMES.set(getGameKey(input.roomId, nextRound), {
         roomId: room.id,
         word,
         players: gameState,
         startedAt: Date.now(),
+        roundEndsAt: Date.now() + timePerRound * 1000,
+        timePerRound,
       });
 
       return {
@@ -293,6 +313,7 @@ export const multiplayerRouter = router({
         wordLength: room.wordLength,
         currentRound: nextRound,
         totalRounds: room.numRounds,
+        timePerRound,
       };
     }),
 
@@ -328,6 +349,13 @@ export const multiplayerRouter = router({
         });
       }
 
+      if (Date.now() > gameState.roundEndsAt) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Round time is over",
+        });
+      }
+
       const playerState = gameState.players.get(ctx.session.user.id);
       if (!playerState) {
         throw new TRPCError({
@@ -343,17 +371,16 @@ export const multiplayerRouter = router({
         });
       }
 
-      const normalizedGuess = validateGuess(
-        input.guess,
-        gameState.word.length,
-      );
+      const normalizedGuess = validateGuess(input.guess, gameState.word.length);
 
       playerState.guessesUsed += 1;
       const feedback = evaluateGuess(normalizedGuess, gameState.word);
 
       // Check if guess is correct
       if (normalizedGuess === gameState.word) {
-        const { roundScore, timeTaken } = processCorrectGuess(gameState.startedAt);
+        const { roundScore, timeTaken } = processCorrectGuess(
+          gameState.startedAt,
+        );
         playerState.status = "won";
         playerState.finishedAt = Date.now();
         playerState.roundScore = roundScore;
@@ -587,6 +614,8 @@ export const multiplayerRouter = router({
       for (let r = 1; r <= room.currentRound; r++) {
         MULTIPLAYER_GAMES.delete(getGameKey(input.roomId, r));
       }
+
+      ROOM_TIME_PER_ROUND.delete(input.roomId);
 
       return { success: true };
     }),

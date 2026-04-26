@@ -36,7 +36,7 @@
     "@OpenWord/config": "*",
     "@types/node": "^22.13.14",
     "prisma": "^7.7.0",
-    "turbo": "^2.9.4",
+    "turbo": "^2.9.6",
     "typescript": "^5"
   },
   "packageManager": "npm@11.12.0"

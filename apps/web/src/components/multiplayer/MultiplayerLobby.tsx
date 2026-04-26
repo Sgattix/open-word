@@ -21,6 +21,7 @@ export function MultiplayerLobby() {
   const [joinCode, setJoinCode] = useState("");
   const [language, setLanguage] = useState("en");
   const [numRounds, setNumRounds] = useState(3);
+  const [timePerRound, setTimePerRound] = useState(60);
 
   const { setRoomId, setRoomCode } = useMultiplayer();
 
@@ -30,6 +31,7 @@ export function MultiplayerLobby() {
       wordLength: number;
       language: string;
       numRounds: number;
+      timePerRound: number;
     }) => trpc.multiplayer.createRoom.mutate(input),
     onSuccess: (data: any) => {
       setRoomId(data.roomId);
@@ -57,6 +59,7 @@ export function MultiplayerLobby() {
       wordLength: settings.wordLength,
       language,
       numRounds,
+      timePerRound,
     });
   }
 
@@ -102,6 +105,8 @@ export function MultiplayerLobby() {
             setLanguage={setLanguage}
             numRounds={numRounds}
             setNumRounds={setNumRounds}
+            timePerRound={timePerRound}
+            setTimePerRound={setTimePerRound}
             onCreate={handleCreateRoom}
             isCreating={createRoomMutation.isPending}
           />

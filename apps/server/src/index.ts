@@ -34,7 +34,7 @@ app.use(
     customLogLevel: (_req, res, err) => {
       if (err || res.statusCode >= 500) return "error";
       if (res.statusCode >= 400) return "warn";
-      return "info";
+      return "silent";
     },
   }),
 );
@@ -48,15 +48,6 @@ app.use(
   }),
 );
 
-// Basic global rate limiter
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, 
-  max: 300, 
-  standardHeaders: true, 
-  legacyHeaders: false, 
-  message: { error: "Too many requests, please try again later." }
-});
-app.use(limiter);
 
 app.all("/api/auth{/*path}", toNodeHandler(auth));
 
@@ -111,7 +102,7 @@ app.use(
   },
 );
 
-app.listen(PORT, () => {
+app.listen(PORT, "0.0.0.0", () => {
   logger.info({ port: PORT }, `Server is running on http://localhost:${PORT}`);
 });
 

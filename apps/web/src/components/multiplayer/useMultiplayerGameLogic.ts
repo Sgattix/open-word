@@ -8,6 +8,8 @@ import {
   useMultiplayerGameState,
   useMultiplayerUIState,
   useRoomStateSync,
+  useGlobalGameTimer,
+  useRoundCountdownTimer,
   useRoundTransition,
   useLeaderboardSync,
   useFinalLeaderboardAnimation,
@@ -106,6 +108,20 @@ export function useMultiplayerGameLogic() {
   // Sync room state from server
   useRoomStateSync(getRoomState.data, gameState);
 
+  // Keep a single synchronized timer for all players.
+  useGlobalGameTimer(
+    gameState.gameStartedAtMs,
+    gameState.roomStatus,
+    gameState.setGlobalElapsedSeconds,
+  );
+
+  useRoundCountdownTimer(
+    gameState.roundEndsAtMs,
+    gameState.roomStatus,
+    gameState.timePerRoundSeconds,
+    gameState.setRoundRemainingSeconds,
+  );
+
   // Handle round transitions
   useRoundTransition(
     gameState.currentRound,
@@ -166,6 +182,9 @@ export function useMultiplayerGameLogic() {
     endRoundMutation,
     finalRanking: computed.finalRanking,
     finishGameMutation,
+    globalElapsedSeconds: gameState.globalElapsedSeconds,
+    roundRemainingSeconds: gameState.roundRemainingSeconds,
+    timePerRoundSeconds: gameState.timePerRoundSeconds,
     guess: gameState.guess,
     guesses: gameState.guesses,
     handleFinishGame,
