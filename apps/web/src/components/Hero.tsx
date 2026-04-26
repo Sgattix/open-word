@@ -33,6 +33,9 @@ function Hero() {
         <Link href={"/multiplayer" as Route} className="hover:underline">
           Multiplayer
         </Link>
+        <Link href={"/leaderboard" as Route} className="hover:underline">
+          Leaderboard
+        </Link>
       </div>
     </div>
   );

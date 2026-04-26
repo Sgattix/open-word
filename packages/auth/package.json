@@ -11,7 +11,10 @@
       "default": "./src/*.ts"
     }
   },
-  "scripts": {},
+  "scripts": {
+    "check-types": "tsc --noEmit -p tsconfig.json",
+    "lint": "npm run check-types"
+  },
   "dependencies": {
     "@OpenWord/db": "*",
     "@OpenWord/env": "*",

@@ -1,5 +1,7 @@
 import nodemailer from "nodemailer";
 
+import logger from "./logger";
+
 // Create reusable transporter object using SMTP transport
 // For development, you can use services like Mailtrap, Ethereal, or a local SMTP server
 // For production, configure with your SMTP provider (Gmail, SendGrid, AWS SES, etc.)
@@ -48,10 +50,16 @@ export async function sendEmail(options: SendEmailOptions) {
       attachments,
     });
 
-    console.log("Email sent:", info.messageId);
+    logger.info(
+      {
+        messageId: info.messageId,
+      },
+      "Email sent",
+    );
+
     return { success: true, messageId: info.messageId };
   } catch (error) {
-    console.error("Email sending error:", error);
+    logger.error({ err: error }, "Email sending error");
     throw error;
   }
 }
@@ -63,10 +71,10 @@ export async function sendEmail(options: SendEmailOptions) {
 export async function verifyEmailConnection(): Promise<boolean> {
   try {
     await transporter.verify();
-    console.log("SMTP connection verified successfully");
+    logger.info("SMTP connection verified successfully");
     return true;
   } catch (error) {
-    console.error("SMTP connection verification failed:", error);
+    logger.error({ err: error }, "SMTP connection verification failed");
     return false;
   }
 }

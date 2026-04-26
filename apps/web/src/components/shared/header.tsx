@@ -17,7 +17,7 @@ export default function Header() {
   }, []);
 
   const logoSrc =
-    mounted && resolvedTheme === "dark" ? "/logo-sm-dark.png" : "/logo-sm.png";
+    mounted && resolvedTheme === "dark" ? "/logo-dark-sm.png" : "/logo-sm.png";
 
   const links: Array<{ to: Route; label: string }> = [
     { to: "/", label: "Home" },

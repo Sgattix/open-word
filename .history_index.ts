@@ -3,7 +3,13 @@ import { z } from "zod";
 
 import { protectedProcedure, publicProcedure, router } from "../index";
 import { multiplayerRouter } from "./multiplayer";
-import { evaluateGuess, type GuessRecord } from "../game/evaluator";
+
+type FeedbackCell = "correct" | "present" | "absent";
+
+type GuessRecord = {
+  guess: string;
+  feedback: FeedbackCell[];
+};
 
 type SoloGame = {
   id: string;
@@ -45,6 +51,42 @@ async function fetchSecretWord(
       message: "Failed to fetch a secret word",
     });
   }
+}
+
+function evaluateGuess(guess: string, word: string) {
+  const feedback: FeedbackCell[] = new Array(word.length).fill("absent");
+  const remainingLetters = new Map<string, number>();
+
+  for (let index = 0; index < word.length; index += 1) {
+    const wordLetter = word[index]!;
+    const guessLetter = guess[index]!;
+
+    if (guessLetter === wordLetter) {
+      feedback[index] = "correct";
+      continue;
+    }
+
+    remainingLetters.set(
+      wordLetter,
+      (remainingLetters.get(wordLetter) ?? 0) + 1,
+    );
+  }
+
+  for (let index = 0; index < word.length; index += 1) {
+    if (feedback[index] === "correct") {
+      continue;
+    }
+
+    const guessLetter = guess[index]!;
+    const count = remainingLetters.get(guessLetter) ?? 0;
+
+    if (count > 0) {
+      feedback[index] = "present";
+      remainingLetters.set(guessLetter, count - 1);
+    }
+  }
+
+  return feedback;
 }
 
 function toPublicGameState(game: SoloGame) {

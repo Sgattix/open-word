@@ -6,10 +6,38 @@ import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { toNodeHandler } from "better-auth/node";
 import cors from "cors";
 import express from "express";
+import pinoHttp from "pino-http";
+import rateLimit from "express-rate-limit";
+import { createServer } from "http";
+import prisma from "@OpenWord/db";
+
+import logger from "./lib/logger";
+import { initializeSocket } from "./socket/socketHandler";
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
 const app = express();
+const httpServer = createServer(app);
+
+app.use(
+  pinoHttp({
+    logger,
+    genReqId: (req) => {
+      const incomingId = req.headers["x-request-id"];
+
+      if (Array.isArray(incomingId)) {
+        return incomingId[0] ?? crypto.randomUUID();
+      }
+
+      return incomingId ?? crypto.randomUUID();
+    },
+    customLogLevel: (_req, res, err) => {
+      if (err || res.statusCode >= 500) return "error";
+      if (res.statusCode >= 400) return "warn";
+      return "info";
+    },
+  }),
+);
 
 app.use(
   cors({
@@ -20,6 +48,16 @@ app.use(
   }),
 );
 
+// Basic global rate limiter
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, 
+  max: 300, 
+  standardHeaders: true, 
+  legacyHeaders: false, 
+  message: { error: "Too many requests, please try again later." }
+});
+app.use(limiter);
+
 app.all("/api/auth{/*path}", toNodeHandler(auth));
 
 app.use(
@@ -27,8 +65,18 @@ app.use(
   createExpressMiddleware({
     router: appRouter,
     createContext,
-    onError: ({ path, error }) => {
-      console.error(`Error in tRPC path: ${path}`, error);
+    onError: ({ path, error, req, ctx }) => {
+      const requestLogger = req.log ?? logger;
+
+      requestLogger.error(
+        {
+          trpcPath: path,
+          trpcCode: error.code,
+          cause: error.cause,
+          userId: ctx?.session?.user.id,
+        },
+        error.message,
+      );
     },
   }),
 );
@@ -42,19 +90,49 @@ app.get("/", (_req, res) => {
 app.use(
   (
     err: any,
-    _req: express.Request,
+    req: express.Request,
     res: express.Response,
     _next: express.NextFunction,
   ) => {
-    console.error("Server error:", err);
-    res.status(500).json({ error: err.message });
+    const requestLogger = req.log ?? logger;
+    requestLogger.error(
+      {
+        err,
+        route: req.originalUrl,
+        method: req.method,
+      },
+      "Unhandled express error",
+    );
+
+    const message =
+      err instanceof Error ? err.message : "Unexpected server error";
+
+    res.status(500).json({ error: message });
   },
 );
 
 app.listen(PORT, () => {
-  console.log(`Server is running on http://localhost:${PORT}`);
+  logger.info({ port: PORT }, `Server is running on http://localhost:${PORT}`);
+});
+
+// Initialize Socket.io after creating the HTTP server
+initializeSocket(httpServer, prisma);
+
+httpServer.listen(PORT, () => {
+  logger.info({ port: PORT }, `Socket.io server running on http://localhost:${PORT}`);
 });
 
 process.on("unhandledRejection", (reason, promise) => {
-  console.error("Unhandled Rejection at:", promise, "reason:", reason);
+  logger.error(
+    {
+      promise,
+      reason,
+    },
+    "Unhandled promise rejection",
+  );
+});
+
+process.on("uncaughtException", (error) => {
+  logger.fatal({ err: error }, "Uncaught exception");
+  process.exit(1);
 });

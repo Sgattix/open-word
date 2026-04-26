@@ -4,45 +4,40 @@ import { authClient } from "@/lib/auth-client";
 import { useMultiplayer } from "@/context/MultiplayerContext";
 import { trpc, queryClient } from "@/utils/trpc";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
-
-type GuessFeedback = "correct" | "present" | "absent";
-type GuessEntry = { guess: string; feedback: GuessFeedback[] };
+import {
+  useMultiplayerGameState,
+  useMultiplayerUIState,
+  useRoomStateSync,
+  useRoundTransition,
+  useLeaderboardSync,
+  useFinalLeaderboardAnimation,
+  useMultiplayerComputedState,
+} from "@/hooks/useMultiplayerState";
 
 export function useMultiplayerGameLogic() {
   const { roomId, players, setPlayers } = useMultiplayer();
   const { data: session } = authClient.useSession();
 
-  const [guess, setGuess] = useState("");
-  const [guesses, setGuesses] = useState<GuessEntry[]>([]);
-  const [userFinished, setUserFinished] = useState(false);
-  const [userScore, setUserScore] = useState(0);
-  const [wordLength, setWordLength] = useState(5);
-  const [currentRound, setCurrentRound] = useState(0);
-  const [totalRounds, setTotalRounds] = useState(3);
-  const [isHost, setIsHost] = useState(false);
-  const [lastSeenRound, setLastSeenRound] = useState(0);
-  const [roomStatus, setRoomStatus] = useState<string>("playing");
-  const [showFinalLeaderboard, setShowFinalLeaderboard] = useState(false);
-  const [revealedCount, setRevealedCount] = useState(0);
+  const gameState = useMultiplayerGameState();
+  const uiState = useMultiplayerUIState();
 
   const submitGuessMutation = useMutation({
     mutationFn: (input: { roomId: string; guess: string }) =>
       trpc.multiplayer.submitGuess.mutate(input),
     onSuccess: (data: any) => {
-      setGuesses((prev) => [
+      gameState.setGuesses((prev) => [
         ...prev,
         {
-          guess: guess.toUpperCase(),
+          guess: gameState.guess.toUpperCase(),
           feedback: data.feedback,
         },
       ]);
 
       if (data.correct) {
-        setUserFinished(true);
-        setUserScore(data.score);
+        gameState.setUserFinished(true);
+        gameState.setUserScore(data.score);
       }
-      setGuess("");
+      gameState.setGuess("");
       void queryClient.invalidateQueries({
         queryKey: ["multiplayer", "getLeaderboard", roomId],
       });
@@ -66,10 +61,10 @@ export function useMultiplayerGameLogic() {
     mutationFn: (input: { roomId: string }) =>
       trpc.multiplayer.startGame.mutate(input),
     onSuccess: () => {
-      setGuesses([]);
-      setUserFinished(false);
-      setUserScore(0);
-      setGuess("");
+      gameState.setGuesses([]);
+      gameState.setUserFinished(false);
+      gameState.setUserScore(0);
+      gameState.setGuess("");
       void queryClient.invalidateQueries({
         queryKey: ["multiplayer", "getRoomState", roomId],
       });
@@ -108,104 +103,39 @@ export function useMultiplayerGameLogic() {
     refetchInterval: 1000,
   });
 
-  useEffect(() => {
-    if (getRoomState.data) {
-      setWordLength(getRoomState.data.wordLength);
-      setCurrentRound(getRoomState.data.currentRound);
-      setTotalRounds(getRoomState.data.numRounds);
-      setIsHost(getRoomState.data.hostId === session?.user?.id);
-      setRoomStatus(getRoomState.data.status);
-    }
-  }, [getRoomState.data, session?.user?.id]);
+  // Sync room state from server
+  useRoomStateSync(getRoomState.data, gameState);
 
-  useEffect(() => {
-    if (currentRound > 0 && currentRound !== lastSeenRound) {
-      setGuesses([]);
-      setGuess("");
-      setUserFinished(false);
-      setUserScore(0);
-      setLastSeenRound(currentRound);
-    }
-  }, [currentRound, lastSeenRound]);
-
-  useEffect(() => {
-    if (getLeaderboard.data) {
-      setPlayers(
-        getLeaderboard.data.map((p) => ({
-          userId: p.userId,
-          userName: p.userName,
-          userImage: p.userImage,
-          status: p.status as "won" | "lost" | "playing",
-          guessesUsed: p.guessesUsed,
-          rank: p.rank,
-          score: p.score,
-        })),
-      );
-    }
-  }, [getLeaderboard.data, setPlayers]);
-
-  useEffect(() => {
-    if (roomStatus === "finished" && !showFinalLeaderboard) {
-      setShowFinalLeaderboard(true);
-      setRevealedCount(0);
-    }
-  }, [roomStatus, showFinalLeaderboard]);
-
-  useEffect(() => {
-    if (!showFinalLeaderboard) return;
-
-    const interval = setInterval(() => {
-      setRevealedCount((prev) => {
-        if (prev >= players.length) {
-          clearInterval(interval);
-          return prev;
-        }
-        return prev + 1;
-      });
-    }, 450);
-
-    return () => clearInterval(interval);
-  }, [showFinalLeaderboard, players.length]);
-
-  const allPlayersFinished =
-    players.length > 0 && players.every((p) => p.status === "won");
-
-  const userPlayer = useMemo(
-    () => players.find((p) => p.userId === session?.user?.id),
-    [players, session?.user?.id],
+  // Handle round transitions
+  useRoundTransition(
+    gameState.currentRound,
+    uiState.lastSeenRound,
+    gameState,
+    uiState,
   );
 
-  const displayWord = useMemo(() => {
-    const correctLetters = new Map<number, string>();
-    for (const g of guesses) {
-      for (let i = 0; i < g.feedback.length; i++) {
-        if (g.feedback[i] === "correct") {
-          correctLetters.set(i, g.guess[i]!);
-        }
-      }
-    }
+  // Sync leaderboard to players
+  useLeaderboardSync(getLeaderboard.data, setPlayers);
 
-    return Array.from({ length: wordLength })
-      .map((_, i) => correctLetters.get(i) || "_")
-      .join(" ");
-  }, [guesses, wordLength]);
+  // Manage final leaderboard animations
+  useFinalLeaderboardAnimation(gameState.roomStatus, players, uiState);
 
-  const finalRanking = useMemo(() => {
-    return [...players].sort((a, b) => {
-      const byScore = b.score - a.score;
-      if (byScore !== 0) return byScore;
-      return (a.rank ?? 999) - (b.rank ?? 999);
-    });
-  }, [players]);
+  // Compute derived state
+  const computed = useMultiplayerComputedState(
+    gameState.guesses,
+    gameState.wordLength,
+    players,
+    session,
+  );
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!roomId || !guess.trim() || userFinished) return;
-    if (guess.trim().length !== wordLength) return;
+    if (!roomId || !gameState.guess.trim() || gameState.userFinished) return;
+    if (gameState.guess.trim().length !== gameState.wordLength) return;
 
     submitGuessMutation.mutate({
       roomId,
-      guess: guess.trim().toUpperCase(),
+      guess: gameState.guess.trim().toUpperCase(),
     });
   }
 
@@ -230,30 +160,30 @@ export function useMultiplayerGameLogic() {
   }
 
   return {
-    allPlayersFinished,
-    currentRound,
-    displayWord,
+    allPlayersFinished: computed.allPlayersFinished,
+    currentRound: gameState.currentRound,
+    displayWord: computed.displayWord,
     endRoundMutation,
-    finalRanking,
+    finalRanking: computed.finalRanking,
     finishGameMutation,
-    guess,
-    guesses,
+    guess: gameState.guess,
+    guesses: gameState.guesses,
     handleFinishGame,
     handleNextRound,
     handleSubmit,
-    isHost,
+    isHost: gameState.isHost,
     players,
-    revealedCount,
-    roomStatus,
+    revealedCount: uiState.revealedCount,
+    roomStatus: gameState.roomStatus,
     session,
-    setGuess,
-    showFinalLeaderboard,
+    setGuess: gameState.setGuess,
+    showFinalLeaderboard: uiState.showFinalLeaderboard,
     startNextRoundMutation,
     submitGuessMutation,
-    totalRounds,
-    userFinished,
-    userPlayer,
-    userScore,
-    wordLength,
+    totalRounds: gameState.totalRounds,
+    userFinished: gameState.userFinished,
+    userPlayer: computed.userPlayer,
+    userScore: gameState.userScore,
+    wordLength: gameState.wordLength,
   };
 }

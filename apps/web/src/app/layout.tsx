@@ -14,6 +14,7 @@ const poppins = Poppins({
 export const metadata: Metadata = {
   title: "OpenWord",
   description: "OpenWord",
+  manifest: "/manifest.json",
 };
 
 export default function RootLayout({
@@ -23,6 +24,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        <link rel="icon" type="image/x-icon" href="/logo-dark-sm.png" />
+      </head>
       <body className={`${poppins.className} antialiased`}>
         <Providers>
           <div className="grid grid-rows-[auto_1fr] h-auto bg-linear-to-tr from-green-500/15 to-orange-500/10 via-neutral-200 dark:via-neutral-800">

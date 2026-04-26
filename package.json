@@ -7,9 +7,12 @@
   ],
   "type": "module",
   "scripts": {
+    "start": "turbo run start",
     "dev": "turbo dev",
     "build": "turbo build",
     "check-types": "turbo check-types",
+    "lint": "turbo lint",
+    "test": "turbo test",
     "dev:native": "turbo -F native dev",
     "dev:web": "turbo -F web dev",
     "dev:server": "turbo -F server dev",

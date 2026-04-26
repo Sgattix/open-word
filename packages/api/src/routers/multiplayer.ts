@@ -1,44 +1,16 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { protectedProcedure, router } from "../index";
-
-type FeedbackCell = "correct" | "present" | "absent";
-
-function evaluateGuess(guess: string, word: string) {
-  const feedback: FeedbackCell[] = new Array(word.length).fill("absent");
-  const remainingLetters = new Map<string, number>();
-
-  for (let index = 0; index < word.length; index += 1) {
-    const wordLetter = word[index]!;
-    const guessLetter = guess[index]!;
-
-    if (guessLetter === wordLetter) {
-      feedback[index] = "correct";
-      continue;
-    }
-
-    remainingLetters.set(
-      wordLetter,
-      (remainingLetters.get(wordLetter) ?? 0) + 1,
-    );
-  }
-
-  for (let index = 0; index < word.length; index += 1) {
-    if (feedback[index] === "correct") {
-      continue;
-    }
-
-    const guessLetter = guess[index]!;
-    const count = remainingLetters.get(guessLetter) ?? 0;
-
-    if (count > 0) {
-      feedback[index] = "present";
-      remainingLetters.set(guessLetter, count - 1);
-    }
-  }
-
-  return feedback;
-}
+import { evaluateGuess } from "../game/evaluator";
+import {
+  validateIsHost,
+  validateGuess,
+  processCorrectGuess,
+  updatePlayerRanks,
+  loadRoundScores,
+  calculateTotalScore,
+  getGameKey,
+} from "./multiplayer-helpers";
 
 const MULTIPLAYER_GAMES = new Map<
   string,
@@ -220,12 +192,7 @@ export const multiplayerRouter = router({
         });
       }
 
-      if (room.hostId !== ctx.session.user.id) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "Only host can start the game",
-        });
-      }
+      validateIsHost(room.hostId, ctx.session.user.id);
 
       const isInitialStart = room.currentRound === 0;
       const isRoundProgression =
@@ -314,8 +281,7 @@ export const multiplayerRouter = router({
       }
 
       // Store with round-specific key
-      const gameKey = `${room.id}_round_${nextRound}`;
-      MULTIPLAYER_GAMES.set(gameKey, {
+      MULTIPLAYER_GAMES.set(getGameKey(input.roomId,nextRound), {
         roomId: room.id,
         word,
         players: gameState,
@@ -351,8 +317,9 @@ export const multiplayerRouter = router({
       }
 
       // Get the current round's game state
-      const gameKey = `${input.roomId}_round_${room.currentRound}`;
-      const gameState = MULTIPLAYER_GAMES.get(gameKey);
+      const gameState = MULTIPLAYER_GAMES.get(
+        getGameKey(input.roomId, room.currentRound),
+      );
 
       if (!gameState) {
         throw new TRPCError({
@@ -376,34 +343,20 @@ export const multiplayerRouter = router({
         });
       }
 
-      const normalizedGuess = input.guess.trim().toUpperCase();
-
-      if (!/^[A-Z]+$/.test(normalizedGuess)) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Guesses must only contain letters",
-        });
-      }
-
-      if (normalizedGuess.length !== gameState.word.length) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: `Guess must be ${gameState.word.length} letters long`,
-        });
-      }
+      const normalizedGuess = validateGuess(
+        input.guess,
+        gameState.word.length,
+      );
 
       playerState.guessesUsed += 1;
       const feedback = evaluateGuess(normalizedGuess, gameState.word);
 
       // Check if guess is correct
       if (normalizedGuess === gameState.word) {
-        const timeTaken = Date.now() - gameState.startedAt;
+        const { roundScore, timeTaken } = processCorrectGuess(gameState.startedAt);
         playerState.status = "won";
         playerState.finishedAt = Date.now();
-        playerState.roundScore = Math.max(
-          0,
-          1000 - Math.floor(timeTaken / 100),
-        );
+        playerState.roundScore = roundScore;
 
         // Load existing round scores
         const roomPlayer = await ctx.db.roomPlayer.findUnique({
@@ -415,12 +368,10 @@ export const multiplayerRouter = router({
           },
         });
 
-        const roundScores: number[] = roomPlayer?.roundScores
-          ? JSON.parse(roomPlayer.roundScores)
-          : [];
+        const roundScores = loadRoundScores(roomPlayer?.roundScores ?? null);
         roundScores[room.currentRound - 1] = playerState.roundScore;
 
-        const totalScore = roundScores.reduce((a, b) => a + b, 0);
+        const totalScore = calculateTotalScore(roundScores);
 
         // Update database
         await ctx.db.roomPlayer.update({
@@ -498,37 +449,15 @@ export const multiplayerRouter = router({
         });
       }
 
-      if (room.hostId !== ctx.session.user.id) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "Only host can end round",
-        });
-      }
+      validateIsHost(room.hostId, ctx.session.user.id);
 
-      // Update player ranks based on current cumulative scores
-      const roomPlayers = await ctx.db.roomPlayer.findMany({
-        where: { roomId: input.roomId },
-      });
-
-      const playersWithScores = roomPlayers.map((p) => ({
-        ...p,
-        roundScores: JSON.parse(p.roundScores || "[]") as number[],
-      }));
-
-      playersWithScores.sort((a, b) => b.finalScore - a.finalScore);
-
-      for (let i = 0; i < playersWithScores.length; i++) {
-        await ctx.db.roomPlayer.update({
-          where: { id: playersWithScores[i]!.id },
-          data: { rank: i + 1 },
-        });
-      }
+      // Update player ranks
+      await updatePlayerRanks(ctx.db, input.roomId);
 
       const isLastRound = room.currentRound >= room.numRounds;
 
       // Clean up current round's in-memory state
-      const gameKey = `${input.roomId}_round_${room.currentRound}`;
-      MULTIPLAYER_GAMES.delete(gameKey);
+      MULTIPLAYER_GAMES.delete(getGameKey(input.roomId, room.currentRound));
 
       if (isLastRound) {
         // Mark game as finished
@@ -656,10 +585,10 @@ export const multiplayerRouter = router({
 
       // Clean up all in-memory states
       for (let r = 1; r <= room.currentRound; r++) {
-        const gameKey = `${input.roomId}_round_${r}`;
-        MULTIPLAYER_GAMES.delete(gameKey);
+        MULTIPLAYER_GAMES.delete(getGameKey(input.roomId, r));
       }
 
       return { success: true };
     }),
 });
+

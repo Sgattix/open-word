@@ -9,7 +9,12 @@
       "default": "./src/*.ts"
     }
   },
-  "scripts": {},
+  "scripts": {
+    "check-types": "tsc --noEmit -p tsconfig.typecheck.json",
+    "lint": "npm run check-types",
+    "test": "vitest run --passWithNoTests",
+    "test:watch": "vitest --passWithNoTests"
+  },
   "dependencies": {
     "@OpenWord/auth": "*",
     "@OpenWord/db": "*",
